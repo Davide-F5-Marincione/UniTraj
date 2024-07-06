@@ -3,3 +3,6 @@
 /unitraj/outputs/
 /unitraj/tmp
 .DS_Store
+.conda
+
+__pycache__
