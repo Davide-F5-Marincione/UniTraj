@@ -5,4 +5,13 @@
 .DS_Store
 .conda
 
+# My additions
+
+build/
+unitraj/models/mtr/ops
+unitraj/data_samples/nuscenes/cache_autobot
+unitraj/wandb
+unitraj/unitraj/test/checkpoints
+
 __pycache__
+*.egg-info
