@@ -9,7 +9,7 @@
 
 build/
 unitraj/models/mtr/ops
-unitraj/data_samples/nuscenes/cache_autobot
+unitraj/data_samples/nuscenes/cache_*
 unitraj/wandb
 unitraj/unitraj/test/checkpoints
 
