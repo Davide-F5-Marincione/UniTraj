@@ -4,7 +4,12 @@ model_id: 'meta-llama/Meta-Llama-3-8B-Instruct'
 use_FDEADE_aux_loss: True
 entropy_weight: 40.0
 kl_weight: 20.0
-num_modes: 6
+num_modes: 2
+sys_prompt: "You are a helpful assistant that extrapolates coordinate sequnece data. Your job, given a python list of {0:d} (x,y) coordinates, is to respond with the future {1:d} coordinates of the given sequence. To increase the quality of the forecast, you have to output {2:d} different sequences. YOU WILL ONLY RESPOND WITH THESE {2:d} SEQUENCES AND SAY NOTHING ELSE."
+prompts: ["{2:s}"]
+          # "Give me {3:d} more results other than the above methods.",
+          # "Give me {3:d} more results other than the above methods.",
+          # "Give me {3:d} more results other than the above methods."]
 max_new_tokens: 1024
 
 # train

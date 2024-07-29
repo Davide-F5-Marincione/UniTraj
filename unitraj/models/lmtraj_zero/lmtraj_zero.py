@@ -39,11 +39,8 @@ class LMTrajZero(BaseModel):
             device="cuda"
         )
 
-        self.prompt_system = "You are a helpful assistant that Extrapolate the coordinate sequence data."
-        self.prompt_template_list = ["Forecast {3:d} times the next {1:d} (x, y) coordinates using the observed {0:d} (x, y) coordinate list.\nDirectly output the {3:d} different cases of the future {1:d} coordinate Python list without explanation.\nList must be in single line, without line split or numbering.\nDirectly output final lists with {1:d} x-y coordinates each without for loop or multiply operators.\n{2:s}",
-                        "Give me {3:d} more results other than the above methods.",
-                        "Give me {3:d} more results other than the above methods.",
-                        "Give me {3:d} more results other than the above methods."]
+        self.prompt_system = config['sys_prompt']
+        self.prompt_template_list = config['prompts']
         self.coord_template = "({0:.2f}, {1:.2f})"
         self.scene_name_template = "scene_{:04d}"
         
@@ -66,12 +63,11 @@ class LMTrajZero(BaseModel):
             llm_processed_list = [[] for _ in range(num_ped)]
         
             for ped_idx in range(num_ped):
-                messages = [{"role": "system", "content": self.prompt_system}]
+                messages = [{"role": "system", "content": self.prompt_system.format(obs_len, pred_len, self.c)}]
 
                 for prompt_idx in range(len(self.prompt_template_list)):
                     coord_str = '[' + ', '.join([self.coord_template.format(*obs_traj[ped_idx, i]) for i in range(obs_len)]) + ']'
                     prompt = self.prompt_template_list[prompt_idx].format(obs_len, pred_len, coord_str, self.c)
-                    print(prompt)
                     messages.append({"role": "user", "content": prompt})
                     
                     error_code = ''
@@ -85,7 +81,7 @@ class LMTrajZero(BaseModel):
                         # Set additional information and settings when it kept failing
                         tmp = 1.0 if timeout >= max_timeout // 2 else temperature
                         if prompt_idx == 0 and timeout == max_timeout // 4 and add_info < 1:
-                            messages[-1]['content'] += '\nProvide five hypothetical scenarios based on different extrapolation methods.'
+                            messages[-1]['content'] += f'\nProvide {self.c:d} hypothetical scenarios based on different extrapolation methods.'
                             add_info = 1
                         elif prompt_idx == 0 and timeout == (max_timeout // 4) * 2 and add_info < 2:
                             messages[-1]['content'] += '\nYou can use methods like linear interpolation, polynomial fitting, moving average, and more.'
@@ -139,13 +135,11 @@ class LMTrajZero(BaseModel):
                         # Remove repeated obs sequence or truncate the response
                         if len(response_cleanup) >= self.c:
                             response_cleanup = response_cleanup[-self.c:]
-
-                        print(response_cleanup)
                         
                         # Check validity
                         if (len(response_cleanup) == self.c
                             and all(len(response_cleanup[i]) == pred_len for i in range(self.c))
-                            and all(all(len(response_cleanup[i][j]) == 2 for j in range(pred_len)) for i in range(5))):
+                            and all(all(len(response_cleanup[i][j]) == 2 for j in range(pred_len)) for i in range(self.c))):
                             # Add the response to the dump list
                             llm_processed_list[ped_idx].extend(response_cleanup)
                             llm_response_list[ped_idx][prompt_idx] = response
