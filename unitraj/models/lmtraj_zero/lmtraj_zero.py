@@ -7,7 +7,7 @@ import os
 from tqdm import tqdm
 import re
 
-max_timeout = 20
+max_tries = 20
 temperature = 0.7
 
 # class AutoBotEgo(nn.Module):
@@ -49,8 +49,8 @@ class LMTrajZero(BaseModel):
         obs_traj_mask = inputs['obj_trajs_mask'].cpu().numpy()
         track_index_to_predict = inputs['track_index_to_predict'].cpu().numpy()
 
-        llm_response_list = []
-        llm_processed_list = []
+        llm_response_list = ["" for _ in range(batch_size)]
+        llm_processed_list = [torch.zeros((self.c, self.T, 2), dtype=torch.float32) for _ in range(batch_size)]
 
         for ped_idx in (progressbar:=tqdm(range(batch_size), desc='Chatbot started!')):
             to_track = track_index_to_predict[ped_idx] + 1
@@ -66,19 +66,19 @@ class LMTrajZero(BaseModel):
             messages.append({"role": "user", "content": prompt})
             
             error_code = ''
-            timeout = 0
+            tries = 0
             add_info = 0
 
-            while timeout < max_timeout:
+            while tries < max_tries:
                 # Prevent RateLimitError by waiting for 20 seconds
-                progressbar.set_description('Scene {}/{} retry {}/{} {}'.format(ped_idx+1, batch_size, timeout, max_timeout, error_code))
+                progressbar.set_description('Scene {}/{} retry {}/{} {}'.format(ped_idx+1, batch_size, tries, max_tries, error_code))
                 
                 # Set additional information and settings when it kept failing
-                tmp = 1.0 if timeout >= max_timeout // 2 else temperature
-                if timeout == max_timeout // 4 and add_info < 1:
+                tmp = 1.0 if tries >= max_tries // 2 else temperature
+                if tries == max_tries // 4 and add_info < 1:
                     messages[-1]['content'] += f'\nProvide {self.c:d} hypothetical scenarios based on different extrapolation methods.'
                     add_info = 1
-                elif timeout == (max_timeout // 4) * 2 and add_info < 2:
+                elif tries == (max_tries // 4) * 2 and add_info < 2:
                     messages[-1]['content'] += '\nYou can use methods like linear interpolation, polynomial fitting, moving average, and more.'
                     add_info = 2
                 
@@ -96,24 +96,24 @@ class LMTrajZero(BaseModel):
                     error_code = f"Unexpected {err=}, {type(err)=}"
                     print(error_code)
                     response = ''
-                    timeout += 1
+                    tries += 1
                     continue
 
                 # filter out wrong answers
                 if (not (abs(obs_traj[ped_idx, to_track, 0] - obs_traj[ped_idx, to_track, -1]).sum() < 0.3
                     or abs(obs_traj[ped_idx, to_track, 0] - obs_traj[ped_idx, to_track, 2]).sum() < 0.2
                     or abs(obs_traj[ped_idx, to_track, -3] - obs_traj[ped_idx, to_track, -1]).sum() < 0.2) and '[' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0]) in response):
-                    timeout += 1
+                    tries += 1
                     error_code = 'Obs coordinates included'
                     continue
                 elif ('[' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0, ::-1]) in response
                     or '(x4, y4)]' in response
                     or ')]' not in response):
-                    timeout += 1
+                    tries += 1
                     error_code = 'Invalid response shape'
                     continue
                 elif len(response) == 0:
-                    timeout += 1
+                    tries += 1
                     error_code = 'Empty response'
                     continue
                 
@@ -122,7 +122,7 @@ class LMTrajZero(BaseModel):
                     response_cleanup = re.sub('[^0-9()\[\],.\-\n]', '', response.replace(':', '\n')).replace('(', '[').replace(')', ']')
                     response_cleanup = [eval(line) for line in response_cleanup.split('\n') if len(line) > 20 and line.startswith('[[') and line.endswith(']]')]
                 except:
-                    timeout += 1
+                    tries += 1
                     error_code = 'Response to list failed'
                     continue
                 
@@ -136,27 +136,23 @@ class LMTrajZero(BaseModel):
                     and all(all(len(response_cleanup[i][j]) == 2 for j in range(self.T)) for i in range(self.c))):
                     # Add the response to the dump list
                     response_cleanup = torch.as_tensor(response_cleanup, dtype=torch.float32)
-                    llm_processed_list.append(response_cleanup)
-                    llm_response_list.append(response)
+                    llm_processed_list[ped_idx] = response_cleanup
+                    llm_response_list[ped_idx] += response
                     messages.append({"role": "assistant", "content": response})
                     break
                 else:
-                    timeout += 1
+                    tries += 1
                     error_code = 'Wrong response format'
                     continue
 
-            if timeout >= max_timeout:
-                print("Chatbot Timeout! Error scene_idx: {}".format(ped_idx))
-                break
-
         llm_processed = torch.stack(llm_processed_list)
-        llm_processed = torch.cat([llm_processed, torch.zeros((batch_size, self.c, self.T, 3), dtype=torch.float32, device=llm_processed.device)], dim=-1)
+        llm_processed = torch.cat([llm_processed, torch.zeros((batch_size, self.c, self.T, 3), dtype=torch.float32, device=llm_processed.device)], dim=-1) # Pad features
         
         output = {}
         output['predicted_trajectory'] = llm_processed.to(batch['input_dict']['obj_trajs'].device)
         output['predicted_probability'] = torch.ones((batch_size, self.c), dtype=torch.float32, device=batch['input_dict']['obj_trajs'].device) / self.c
 
-        temp = np.linalg.norm(llm_processed.numpy()[..., :2] - inputs['center_gt_trajs'][:, None, :, :2].cpu().numpy(), axis=-1)
+        temp = ((llm_processed.numpy()[..., :2] - inputs['center_gt_trajs'][:, None, :, :2].cpu().numpy()) ** 2).sum(axis=-1) ** 0.5
         ADE = temp.mean(axis=-1).min(axis=-1)
         FDE = temp[..., -1].min(axis=-1)
         ADE_mean, ADE_std = np.mean(ADE), np.std(ADE)
