@@ -59,6 +59,12 @@ class BaseModel(pl.LightningModule):
         self.compute_official_evaluation(batch, prediction)
         self.log_info(batch, batch_idx, prediction, status='val')
         return loss
+    
+    def test_step(self, batch, batch_idx):
+        prediction, loss = self.forward(batch)
+        self.compute_official_evaluation(batch, prediction)
+        self.log_info(batch, batch_idx, prediction, status='test')
+        return loss
 
     def on_validation_epoch_end(self):
         if self.config.get('eval_waymo', False):
