@@ -5,9 +5,9 @@ use_FDEADE_aux_loss: True
 entropy_weight: 40.0
 kl_weight: 20.0
 num_modes: 5
-sys_prompt: "You are a helpful assistant that extrapolates coordinate sequence data. Your job, given an object's trajectory as a python list of {0:d} (x,y) coordinates, is to respond with its future {1:d} coordinates. To increase the quality of the forecast, you have to output {2:d} different sequences. YOU WILL ONLY RESPOND WITH THESE {2:d} SEQUENCES AND SAY NOTHING ELSE."
+sys_prompt: "You are a helpful assistant that extrapolates coordinate sequence data. Your job, given an object's trajectory as a python dictionary of {0:d} (x,y) coordinates, is to respond with its future {1:d} coordinates. To increase the quality of the forecast you have to output {2:d} different dictionaries, listed via alphabetical enumeration (e.g., a., b., etc.), the keys of each sequence shall start with 0 and the sequences shall be defined extensively. YOU WILL ONLY RESPOND WITH THESE {2:d} SEQUENCES AND SAY NO MORE."
 prompt: "{1:s}"
-max_new_tokens: 1024
+max_new_tokens: 4096
 
 # train
 max_epochs: 0 #150 #40
@@ -22,8 +22,8 @@ grad_clip_norm: 5
 
 # data related
 max_num_agents: 15
-past_len: 8 
-future_len: 12
+past_len: 21
+future_len: 60
 map_range: 100
 max_num_roads: 256
 max_points_per_lane: 20 # will be overwritten if manually_split_lane is True

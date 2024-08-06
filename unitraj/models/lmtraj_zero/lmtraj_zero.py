@@ -6,6 +6,7 @@ import transformers
 import os
 from tqdm import tqdm
 import re
+import ast
 
 max_tries = 20
 temperature = 0.7
@@ -39,7 +40,7 @@ class LMTrajZero(BaseModel):
 
         self.prompt_system = config['sys_prompt']
         self.prompt = config['prompt']
-        self.coord_template = "({0:.2f}, {1:.2f})"
+        self.coord_template = "{2:d}: ({0:.2f}, {1:.2f})"
 
     def forward(self, batch):
         batch_size = batch['batch_size']
@@ -61,9 +62,8 @@ class LMTrajZero(BaseModel):
             for obj_idx in range(obs_traj.shape[1]):
                 if obj_idx + 1 == to_track:
                     if obs_traj_mask[ped_idx, obj_idx, 0]:
-                        coord_str = '[' + ', '.join([self.coord_template.format(*obs_traj[ped_idx, obj_idx, i]) for i in range(self.past)]) + ']'
+                        coord_str = '{' + ', '.join([self.coord_template.format(*obs_traj[ped_idx, obj_idx, i], i) for i in range(self.past)]) + '}'
                         prompt += self.prompt.format(obj_idx + 1, coord_str) + '\n'
-            prompt += f'Forecast: {to_track:02d}'
             messages.append({"role": "user", "content": prompt})
             
             error_code = ''
@@ -103,13 +103,13 @@ class LMTrajZero(BaseModel):
                 # filter out wrong answers
                 if (not (abs(obs_traj[ped_idx, to_track, 0] - obs_traj[ped_idx, to_track, -1]).sum() < 0.3
                     or abs(obs_traj[ped_idx, to_track, 0] - obs_traj[ped_idx, to_track, 2]).sum() < 0.2
-                    or abs(obs_traj[ped_idx, to_track, -3] - obs_traj[ped_idx, to_track, -1]).sum() < 0.2) and '[' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0]) in response):
+                    or abs(obs_traj[ped_idx, to_track, -3] - obs_traj[ped_idx, to_track, -1]).sum() < 0.2) and '{' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0], -self.past) in response):
                     tries += 1
                     error_code = 'Obs coordinates included'
                     continue
-                elif ('[' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0, ::-1]) in response
-                    or '(x4, y4)]' in response
-                    or ')]' not in response):
+                elif ('{' + self.coord_template.format(*obs_traj[ped_idx, to_track, 0, ::-1], -self.past) in response
+                    or '(x4, y4)}' in response
+                    or ')}' not in response):
                     tries += 1
                     error_code = 'Invalid response shape'
                     continue
@@ -120,8 +120,9 @@ class LMTrajZero(BaseModel):
                 
                 # Convert to list, check validity
                 try:
-                    response_cleanup = re.sub('[^0-9()\[\],.\-\n]', '', response.replace(':', '\n')).replace('(', '[').replace(')', ']')
-                    response_cleanup = [eval(line) for line in response_cleanup.split('\n') if len(line) > 20 and line.startswith('[[') and line.endswith(']]')]
+                    response_cleanup = re.sub('[^0-9()\{\},.:\-\n]', '', response)
+                    response_cleanup = [eval(line[1:]) for line in response_cleanup.split('\n') if len(line) > 20 and line.startswith('.{0') and line.endswith(')}')]
+                    response_cleanup = [[list(line[i]) for i in range(self.T)] for line in response_cleanup]
                 except:
                     tries += 1
                     error_code = 'Response to list failed'
@@ -139,7 +140,6 @@ class LMTrajZero(BaseModel):
                     response_cleanup = torch.as_tensor(response_cleanup, dtype=torch.float32)
                     llm_processed_list[ped_idx] = response_cleanup
                     llm_response_list[ped_idx] += response
-                    messages.append({"role": "assistant", "content": response})
                     break
                 else:
                     tries += 1
