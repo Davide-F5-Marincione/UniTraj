@@ -1,6 +1,6 @@
 # common
 model_name: lmtraj_zero
-model_id: 'meta-llama/Meta-Llama-3-8B-Instruct'
+model_id: 'meta-llama/Meta-Llama-3.1-8B-Instruct'
 use_FDEADE_aux_loss: True
 entropy_weight: 40.0
 kl_weight: 20.0
