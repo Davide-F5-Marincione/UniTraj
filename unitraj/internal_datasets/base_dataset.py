@@ -11,10 +11,10 @@ from scenarionet.common_utils import read_scenario, read_dataset_summary
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from unitraj.datasets import common_utils
-from unitraj.datasets.common_utils import get_polyline_dir, find_true_segments, generate_mask, is_ddp, \
+from unitraj.internal_datasets import common_utils
+from unitraj.internal_datasets.common_utils import get_polyline_dir, find_true_segments, generate_mask, is_ddp, \
     get_kalman_difficulty, get_trajectory_type, interpolate_polyline
-from unitraj.datasets.types import object_type, polyline_type
+from unitraj.internal_datasets.types import object_type, polyline_type
 from unitraj.utils.visualization import check_loaded_data
 
 default_value = 0
@@ -1024,7 +1024,7 @@ def split_data(cfg):
 
 
 if __name__ == '__main__':
-    from unitraj.datasets import build_dataset
+    from unitraj.internal_datasets import build_dataset
     from unitraj.utils.utils import set_seed
     import io
     from PIL import Image

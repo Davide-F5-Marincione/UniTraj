@@ -1,0 +1,40 @@
+model_name: lmtraj_t5
+inner_model_name: t5-small
+model_config_name: null
+cache_dir: './.cache/'
+tokenizer_name: ./checkpoint/tokenizer/trajectoryspiece-bpe/
+use_slow_tokenizer: true
+max_source_length: 512
+max_target_length: 128
+model_type: null
+overwrite_cache: false
+pad_to_max_length: false
+pad_max_length: false
+
+# train
+max_epochs: 8 #150 #40
+learning_rate: 0.00075 # 0.00075 # 1e-3 for lanegcn
+learning_rate_sched: [ 10, 20, 30, 40, 50 ]
+weight_decay: 0.01
+ewc_lambda: 2000
+train_batch_size: 128 #32 #128
+eval_batch_size: 256 #32 #128
+grad_clip_norm: 5
+
+max_num_agents: 15
+past_len: 21
+future_len: 60
+map_range: 100
+max_num_roads: 256
+max_points_per_lane: 20 # will be overwritten if manually_split_lane is True
+# lane split related params
+manually_split_lane: False # if True, lanes will be split with the same number of points and length, else, lanes will be split with the same number of points but varying length
+point_sampled_interval: 1 # only used when manually_split_lane is True, the interval of points sampled from the original lane
+num_points_each_polyline: 20 # only used when manually_split_lane is True, the number of points in each polyline
+vector_break_dist_thresh: 1.0 # only used when manually_split_lane is True, the distance threshold to break the vector to split the lane
+
+
+num_beams: 2
+temperature: "beam"
+best_of_n: 1
+num_samples: 1

@@ -15,3 +15,8 @@ unitraj/unitraj/test/checkpoints
 
 __pycache__
 *.egg-info
+*.lock
+*/.cache
+*/checkpoint
+*/predictions
+*.ckpt

@@ -1,0 +1,37 @@
+# common
+model_name: lmtraj_zero_gpt
+model_id: 'gpt-4o-mini'
+use_FDEADE_aux_loss: True
+entropy_weight: 40.0
+kl_weight: 20.0
+num_modes: 5
+sys_prompt: "You are a helpful assistant that extrapolates coordinate sequence data. Your job, given an object's trajectory as a python dictionary of {0:d} (x,y) coordinates, is to respond with its future {1:d} coordinates. To increase the quality of the forecast you have to output {2:d} different dictionaries, listed via alphabetical enumeration (e.g., a., b., etc.), the keys of each sequence shall start with 0 and the sequences shall be defined extensively. YOU WILL ONLY RESPOND WITH THESE {2:d} SEQUENCES AND SAY NO MORE."
+prompt: "{1:s}"
+max_new_tokens: 4096
+
+# train
+max_epochs: 0 #150 #40
+learning_rate: 0.00075 # 0.00075 # 1e-3 for lanegcn
+learning_rate_sched: [ 10, 20, 30, 40, 50 ]
+optimizer: Adam #According to PyTorch naming
+scheduler: multistep # plateau, multistep
+ewc_lambda: 2000
+train_batch_size: 128 #32 #128
+eval_batch_size: 256 #256 #32 #128
+grad_clip_norm: 5
+
+# data related
+max_num_agents: 15
+past_len: 21
+future_len: 60
+map_range: 100
+max_num_roads: 256
+max_points_per_lane: 20 # will be overwritten if manually_split_lane is True
+# lane split related params
+manually_split_lane: False # if True, lanes will be split with the same number of points and length, else, lanes will be split with the same number of points but varying length
+point_sampled_interval: 1 # only used when manually_split_lane is True, the interval of points sampled from the original lane
+num_points_each_polyline: 20 # only used when manually_split_lane is True, the number of points in each polyline
+vector_break_dist_thresh: 1.0 # only used when manually_split_lane is True, the distance threshold to break the vector to split the lane
+
+
+  
