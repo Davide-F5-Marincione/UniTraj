@@ -1,9 +1,9 @@
 # exp setting
-exp_name: 'test' # name that will be used in wandb
+exp_name: 't5-train' # name that will be used in wandb
 ckpt_path: null # checkpoint path, used for evaluation
 seed: 42 # random seed
 debug: False # debug mode, will use cpu only
-devices: [ 0 ] # gpu ids
+devices: [ 0, 1] # gpu ids
 
 # data related
 load_num_workers: 1 # number of workers for loading data

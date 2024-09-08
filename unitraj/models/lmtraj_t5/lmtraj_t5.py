@@ -1,17 +1,14 @@
-import numpy as np
-import torch
 
-import transformers
-from transformers import CONFIG_MAPPING, AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer, DataCollatorForSeq2Seq, get_scheduler
-from unitraj.models.base_model.base_model import BaseModel
-import transformers
-import os
-from tqdm import tqdm
-import re
 import nltk
-from filelock import FileLock
-from transformers.utils import is_offline_mode
+import torch
+import logging
 import evaluate
+import numpy as np
+from filelock import FileLock
+
+from transformers.utils import is_offline_mode
+from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoTokenizer
+from unitraj.models.base_model.base_model import BaseModel
 
 
 def init_nltk():
@@ -78,21 +75,16 @@ class LMTrajT5(BaseModel):
 
         inp = []
         out = []
-        for ped_idx in (progressbar:=tqdm(range(batch_size), desc='Chatbot started!')):
-
+        for ped_idx in range(batch_size):
             inp.append(' '.join([f"{obs_traj[ped_idx, track_index_to_predict[ped_idx], i, 0]:.2f}|{obs_traj[ped_idx, track_index_to_predict[ped_idx], i, 1]:.2f}" for i in range(21)]))
             out.append(' '.join([f"{center_gt[ped_idx, i, 0]:.2f}|{center_gt[ped_idx, i, 1]:.2f}" for i in range(60)]))
 
-        padding = "max_length"
-        model_inputs = self.tokenizer(inp, max_length=self.config['max_source_length'], padding=padding, truncation=True)
-        labels = self.tokenizer(text_target=out, max_length=self.config['max_target_length'], padding=padding, truncation=True)
-        
-        if padding == "max_length":
-            labels["input_ids"] = [[(l if l != self.tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]]
+        model_inputs = self.tokenizer(inp, max_length=self.config['max_source_length'], padding="max_length", truncation=True)
+        labels = self.tokenizer(text_target=out, max_length=self.config['max_target_length'], padding="max_length", truncation=True)
+        labels["input_ids"] = [[(l if l != self.tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]]
 
-        model_inputs["labels"] = labels["input_ids"]
         model_inputs['input_ids'] = torch.as_tensor(model_inputs['input_ids']).to(inputs['obj_trajs'].device)
-        model_inputs['labels'] = torch.as_tensor(model_inputs['labels']).to(inputs['obj_trajs'].device)
+        model_inputs['labels'] = torch.as_tensor(labels["input_ids"]).to(inputs['obj_trajs'].device)
         model_inputs['attention_mask'] = torch.as_tensor(model_inputs['attention_mask']).to(inputs['obj_trajs'].device)
         return model_inputs
 
@@ -102,12 +94,12 @@ class LMTrajT5(BaseModel):
     
     def training_step(self, batch, batch_idx):
         loss = self.forward(batch)
-        self.log("train/loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'])
+        self.log("train/loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'], prog_bar=True)
         return loss
     
     def generate(self, batch):
         batch = self.preprocess_function(batch)
-        generated_tokens = self.model.generate(**batch)
+        generated_tokens = self.model.generate(**batch, max_length=self.config["max_target_length"], num_beams=1)
 
         generated_tokens = generated_tokens.cpu().numpy()
 
@@ -130,7 +122,10 @@ class LMTrajT5(BaseModel):
         metric = evaluate.load("rouge")
         metric.add_batch(predictions=decoded_preds, references=decoded_labels)
 
+        # To suppress rouge's annoying "Using default tokenizer." line
+        logging.disable(logging.CRITICAL)
         result = metric.compute(use_stemmer=True)
+        logging.disable(logging.NOTSET)
         result = {k: round(v * 100, 4) for k, v in result.items()}
 
         return result
@@ -139,7 +134,7 @@ class LMTrajT5(BaseModel):
         result = self.generate(batch)
 
         for k, v in result.items():
-            self.log("val/"+ k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'])
+            self.log("val/"+ k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'], prog_bar=True)
 
     
     def log_info(self, batch, batch_idx, prediction, status='train'):
