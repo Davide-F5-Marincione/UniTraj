@@ -5,8 +5,9 @@ torch.set_float32_matmul_precision('medium')
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 from models import build_model
-from datasets import build_dataset
+from internal_datasets import build_dataset
 from utils.utils import set_seed
+from utils.utils import set_seed, find_latest_checkpoint
 from pytorch_lightning.callbacks import ModelCheckpoint  # Import ModelCheckpoint
 import hydra
 from omegaconf import OmegaConf
@@ -28,15 +29,6 @@ def train(cfg):
 
     call_backs = []
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val/brier_fde',  # Replace with your validation metric
-        filename='{epoch}-{val/brier_fde:.2f}',
-        save_top_k=1,
-        mode='min',  # 'min' for loss/error, 'max' for accuracy
-    )
-
-    call_backs.append(checkpoint_callback)
-
     val_loader = DataLoader(
         val_set, batch_size=eval_batch_size, num_workers=cfg.load_num_workers, shuffle=False, drop_last=False,
         collate_fn=train_set.collate_fn)
@@ -51,6 +43,9 @@ def train(cfg):
         strategy="auto" if cfg.debug else "ddp",
         callbacks=call_backs
     )
+
+    if cfg.ckpt_path is None and not cfg.debug:
+        cfg.ckpt_path = find_latest_checkpoint(os.path.join('unitraj', cfg.exp_name, 'checkpoints'))
 
     trainer.test(model=model, dataloaders=val_loader)
 

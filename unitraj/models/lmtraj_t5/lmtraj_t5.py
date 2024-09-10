@@ -127,116 +127,29 @@ class LMTrajT5(BaseModel):
         result = metric.compute(use_stemmer=True)
         logging.disable(logging.NOTSET)
         result = {k: round(v * 100, 4) for k, v in result.items()}
-
-        return result
+        
+        return result, decoded_labels
     
-    def validation_step(self, batch, batch_idx):
-        result = self.generate(batch)
+    def validation_step(self, batch, batch_idx, status='val'):
+        result, decoded_labels = self.generate(batch)
+
+        output = {}
+        try:
+            traj = [[tuple(map(float, snap.split('|'))) for snap in line.split(' ')][:60] for line in decoded_labels]
+            output['predicted_trajectory'] = torch.as_tensor(traj).to(batch['input_dict']['obj_trajs'].device)[:, None]
+        except:
+            traj = [[(0,0)] * 60 for _ in range(len(decoded_labels))]
+            output['predicted_trajectory'] = torch.as_tensor(traj).to(batch['input_dict']['obj_trajs'].device)[:, None]
+        
+        output['predicted_probability'] = torch.ones((len(decoded_labels), 1)).to(batch['input_dict']['obj_trajs'].device) 
 
         for k, v in result.items():
-            self.log("val/"+ k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'], prog_bar=True)
+            self.log(status + "/"+ k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch['batch_size'], prog_bar=True)
 
-    
-    def log_info(self, batch, batch_idx, prediction, status='train'):
-        ## logging
-        # Split based on dataset
-        inputs = batch['input_dict']
-        gt_traj = inputs['center_gt_trajs'].unsqueeze(1)  # .transpose(0, 1).unsqueeze(0)
-        gt_traj_mask = inputs['center_gt_trajs_mask'].unsqueeze(1)
-        center_gt_final_valid_idx = inputs['center_gt_final_valid_idx']
-        
-        predicted_traj = prediction['predicted_trajectory']
-        predicted_prob = prediction['predicted_probability'].detach().cpu().numpy()
+        self.log_info(batch, batch_idx, output, status=status)
 
-        # Calculate ADE losses
-        ade_diff = torch.norm(predicted_traj[:, :, :, :2] - gt_traj[:, :, :, :2], 2, dim=-1)
-        ade_losses = torch.sum(ade_diff * gt_traj_mask, dim=-1) / torch.sum(gt_traj_mask, dim=-1)
-        ade_losses = ade_losses.cpu().detach().numpy()
-        minade = np.min(ade_losses, axis=1)
-        # Calculate FDE losses
-        bs, modes, future_len = ade_diff.shape
-        center_gt_final_valid_idx = center_gt_final_valid_idx.view(-1, 1, 1).repeat(1, modes, 1).to(torch.int64)
-
-        fde = torch.gather(ade_diff, -1, center_gt_final_valid_idx).cpu().detach().numpy().squeeze(-1)
-        minfde = np.min(fde, axis=-1)
-
-        best_fde_idx = np.argmin(fde, axis=-1)
-        predicted_prob = predicted_prob[np.arange(bs), best_fde_idx]
-        miss_rate = (minfde > 2.0)
-        brier_fde = minfde + np.square(1 - predicted_prob)
-
-        loss_dict = {
-            'minADE6': minade,
-            'minFDE6': minfde,
-            'miss_rate': miss_rate.astype(np.float32),
-            'brier_fde': brier_fde}
-
-        important_metrics = list(loss_dict.keys())
-
-        new_dict = {}
-        dataset_names = inputs['dataset_name']
-        unique_dataset_names = np.unique(dataset_names)
-        for dataset_name in unique_dataset_names:
-            batch_idx_for_this_dataset = np.argwhere([n == str(dataset_name) for n in dataset_names])[:, 0]
-            for key in loss_dict.keys():
-                new_dict[dataset_name + '/' + key] = loss_dict[key][batch_idx_for_this_dataset]
-
-        # merge new_dict with log_dict
-        loss_dict.update(new_dict)
-        # loss_dict.update(avg_dict)
-
-        if status == 'val' and self.config.get('eval', False):
-
-            # Split scores based on trajectory type
-            new_dict = {}
-            trajectory_types = inputs["trajectory_type"].cpu().numpy()
-            trajectory_correspondance = {0: "stationary", 1: "straight", 2: "straight_right",
-                                         3: "straight_left", 4: "right_u_turn", 5: "right_turn",
-                                         6: "left_u_turn", 7: "left_turn"}
-            for traj_type in range(8):
-                batch_idx_for_traj_type = np.where(trajectory_types == traj_type)[0]
-                if len(batch_idx_for_traj_type) > 0:
-                    for key in important_metrics:
-                        new_dict["traj_type/" + trajectory_correspondance[traj_type] + "_" + key] = loss_dict[key][
-                            batch_idx_for_traj_type]
-            loss_dict.update(new_dict)
-
-            # Split scores based on kalman_difficulty @6s
-            new_dict = {}
-            kalman_difficulties = inputs["kalman_difficulty"][:,
-                                  -1].cpu().numpy()  # Last is difficulty at 6s (others are 2s and 4s)
-            for kalman_bucket, (low, high) in {"easy": [0, 30], "medium": [30, 60], "hard": [60, 9999999]}.items():
-                batch_idx_for_kalman_diff = \
-                    np.where(np.logical_and(low <= kalman_difficulties, kalman_difficulties < high))[0]
-                if len(batch_idx_for_kalman_diff) > 0:
-                    for key in important_metrics:
-                        new_dict["kalman/" + kalman_bucket + "_" + key] = loss_dict[key][batch_idx_for_kalman_diff]
-            loss_dict.update(new_dict)
-
-            new_dict = {}
-            agent_types = [1, 2, 3]
-            agent_type_dict = {1: "vehicle", 2: "pedestrian", 3: "bicycle"}
-            for type in agent_types:
-                batch_idx_for_type = np.where(inputs['center_objects_type'] == type)[0]
-                if len(batch_idx_for_type) > 0:
-                    for key in important_metrics:
-                        new_dict["agent_types" + '/' + agent_type_dict[type] + "_" + key] = loss_dict[key][
-                            batch_idx_for_type]
-            # merge new_dict with log_dict
-            loss_dict.update(new_dict)
-
-        # Take mean for each key but store original length before (useful for aggregation)
-        size_dict = {key: len(value) for key, value in loss_dict.items()}
-        loss_dict = {key: np.mean(value) for key, value in loss_dict.items()}
-
-        for k, v in loss_dict.items():
-            self.log(status + "/" + k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=size_dict[k])
-
-        if status == 'val' and batch_idx == 0 and not self.config.debug:
-            img = visualization.visualize_prediction(batch, prediction)
-            wandb.log({"prediction": [wandb.Image(img)]})
-
-        return
+    def test_step(self, batch, batch_idx):
+        self.validation_step(batch, batch_idx, status='test')
 
     def configure_optimizers(self):
         no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
