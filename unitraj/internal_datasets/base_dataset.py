@@ -24,12 +24,13 @@ polyline_type = defaultdict(lambda: default_value, polyline_type)
 
 class BaseDataset(Dataset):
 
-    def __init__(self, config=None, is_validation=False):
-        if is_validation:
-            self.data_path = config['val_data_path']
+    def __init__(self, config=None, is_validation=False, is_test=False):
+        if is_test:
+            self.data_path = config['test_data_path']
         else:
-            self.data_path = config['train_data_path']
+            self.data_path = config['data_path']
         self.is_validation = is_validation
+        self.is_test = is_test
         self.config = config
         self.data_loaded_memory = []
         self.data_chunk_size = 8
@@ -39,12 +40,15 @@ class BaseDataset(Dataset):
         self.data_loaded = {}
         if self.is_validation:
             print('Loading validation data...')
+        elif self.is_test:
+            print('Loading test data...')
         else:
             print('Loading training data...')
 
         for cnt, data_path in enumerate(self.data_path):
             dataset_name = data_path.split('/')[-1]
-            self.cache_path = os.path.join(data_path, f'cache_{self.config.method.model_name}')
+            whatis = 'test' if self.is_test else 'val' if self.is_validation else 'train'
+            self.cache_path = os.path.join(data_path, f'cache_{whatis}_{self.config.method.model_name}')
 
             data_usage_this_dataset = self.config['max_data_num'][cnt]
             data_usage_this_dataset = int(data_usage_this_dataset / self.data_chunk_size)
@@ -57,6 +61,14 @@ class BaseDataset(Dataset):
                 else:
 
                     _, summary_list, mapping = read_dataset_summary(data_path)
+
+                    if not self.is_test:
+                        np.random.shuffle(summary_list)
+                        i = int(len(summary_list) * self.config['train_val_split'])
+                        if self.is_validation:
+                            summary_list = summary_list[i:]
+                        else:
+                            summary_list = summary_list[:i]
 
                     if os.path.exists(self.cache_path):
                         shutil.rmtree(self.cache_path)

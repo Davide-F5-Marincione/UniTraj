@@ -16,8 +16,8 @@ __all__ = {
 }
 
 
-def build_dataset(config, val=False):
+def build_dataset(config, val=False, test=False):
     dataset = __all__[config.method.model_name](
-        config=config, is_validation=val
+        config=config, is_validation=val, is_test=test
     )
     return dataset

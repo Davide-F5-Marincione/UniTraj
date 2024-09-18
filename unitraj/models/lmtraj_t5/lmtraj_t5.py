@@ -2,7 +2,7 @@
 import nltk
 import torch
 import logging
-import evaluate
+from rouge_score import rouge_scorer
 import numpy as np
 from filelock import FileLock
 
@@ -49,6 +49,7 @@ class LMTrajT5(BaseModel):
         init_nltk()
 
         self.config = config
+        self.scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL', 'rougeLsum'], use_stemmer=True)
 
         auto_config = AutoConfig.from_pretrained(config['model_config_name'] if config['model_config_name']  else config['inner_model_name'] , trust_remote_code=False, cache_dir=config['cache_dir'])
 
@@ -119,14 +120,14 @@ class LMTrajT5(BaseModel):
             decoded_labels = self.tokenizer.sp_model.decode(filtered_tokens_labels.tolist())
         
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-        metric = evaluate.load("rouge")
-        metric.add_batch(predictions=decoded_preds, references=decoded_labels)
 
         # To suppress rouge's annoying "Using default tokenizer." line
-        logging.disable(logging.CRITICAL)
-        result = metric.compute(use_stemmer=True)
-        logging.disable(logging.NOTSET)
-        result = {k: round(v * 100, 4) for k, v in result.items()}
+        result = {}
+        for dic in map(lambda x: self.scorer.score(*x), zip(decoded_labels, decoded_preds)):
+            for k, v in dic.items():
+                result[k] = result.get(k, 0) + v.fmeasure
+        result = {k: round(v / len(decoded_labels) * 100, 4) for k, v in result.items()}
+
         
         return result, decoded_labels
     

@@ -1,0 +1,2 @@
+epoch,step,test/brier_fde,test/minADE6,test/minFDE6,test/miss_rate,test/nuscenes/brier_fde,test/nuscenes/minADE6,test/nuscenes/minFDE6,test/nuscenes/miss_rate,test/rouge1,test/rouge2,test/rougeL,test/rougeLsum
+0,0,0.003627689788118005,0.0035943230614066124,0.003627689788118005,0.0,0.003627689788118005,0.0035943230614066124,0.003627689788118005,0.0,28.64434814453125,9.22764778137207,22.410688400268555,20.8681640625

@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 
 torch.set_float32_matmul_precision('medium')
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader
 from models import build_model
 from internal_datasets import build_dataset
@@ -22,32 +22,32 @@ def train(cfg):
    
     model = build_model(cfg)
 
-    train_set = build_dataset(cfg)
-    val_set = build_dataset(cfg, val=True)
+    test_set = build_dataset(cfg, test=True)
 
-    eval_batch_size = max(cfg.method['eval_batch_size'] // len(cfg.devices) // val_set.data_chunk_size, 1)
+    eval_batch_size = max(cfg.method['eval_batch_size'] // len(cfg.devices) // test_set.data_chunk_size, 1)
 
     call_backs = []
 
-    val_loader = DataLoader(
-        val_set, batch_size=eval_batch_size, num_workers=cfg.load_num_workers, shuffle=False, drop_last=False,
-        collate_fn=train_set.collate_fn)
+    set_loader = DataLoader(
+        test_set, batch_size=eval_batch_size, num_workers=cfg.load_num_workers, shuffle=False, drop_last=False,
+        collate_fn=test_set.collate_fn)
 
     trainer = pl.Trainer(
         max_epochs=cfg.method.max_epochs,
-        logger=None, #! if cfg.debug else WandbLogger(project="unitraj", name=cfg.exp_name, id=cfg.exp_name),
-        devices=1 if cfg.debug else cfg.devices,
+        logger=CSVLogger("unitraj", name=cfg.exp_name),
+        devices=1,
         gradient_clip_val=cfg.method.grad_clip_norm,
         accelerator="cpu" if cfg.debug else "gpu",
         profiler="simple",
         strategy="auto" if cfg.debug else "ddp",
-        callbacks=call_backs
+        callbacks=call_backs,
+        num_nodes=1,
     )
 
     if cfg.ckpt_path is None and not cfg.debug:
         cfg.ckpt_path = find_latest_checkpoint(os.path.join('unitraj', cfg.exp_name, 'checkpoints'))
 
-    trainer.test(model=model, dataloaders=val_loader)
+    trainer.test(model=model, dataloaders=set_loader)
 
 
 if __name__ == '__main__':

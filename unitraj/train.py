@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 
 torch.set_float32_matmul_precision('medium')
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader
 from models import build_model
 from internal_datasets import build_dataset
@@ -48,13 +48,14 @@ def train(cfg):
 
     trainer = pl.Trainer(
         max_epochs=cfg.method.max_epochs,
-        logger=None if cfg.debug else WandbLogger(project="unitraj", name=cfg.exp_name, id=cfg.exp_name),
-        devices=1 if cfg.debug else cfg.devices,
+        logger=CSVLogger("unitraj", name=cfg.exp_name), #WandbLogger(project="unitraj", name=cfg.exp_name, id=cfg.exp_name)
+        devices=1,
         gradient_clip_val=cfg.method.grad_clip_norm,
         accelerator="cpu" if cfg.debug else "gpu",
         profiler="simple",
         strategy="auto" if cfg.debug else "ddp",
-        callbacks=call_backs
+        callbacks=call_backs,
+        num_nodes=1,
     )
 
     # automatically resume training
